@@ -1,0 +1,14 @@
+{
+  "name": "Iron Log — Workout Tracker",
+  "short_name": "Iron Log",
+  "description": "Push / Pull / Legs tracker with progressive overload",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101210",
+  "theme_color": "#101210",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

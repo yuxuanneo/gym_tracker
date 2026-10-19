@@ -1,0 +1,118 @@
+{
+  "workouts": [
+    {
+      "day_type": "push",
+      "status": "template",
+      "exercises": [
+        {
+          "exercise": "Dumbbell Bench Press",
+          "sets": 4,
+          "target_reps": "5-8"
+        },
+        {
+          "exercise": "Incline Dumbbell Press",
+          "sets": 3,
+          "target_reps": "8-10"
+        },
+        {
+          "exercise": "Seated Dumbbell Shoulder Press",
+          "sets": 3,
+          "target_reps": "8-10"
+        },
+        {
+          "exercise": "Cable Chest Press",
+          "sets": 3,
+          "target_reps": "10-12"
+        },
+        {
+          "exercise": "Lateral Raise",
+          "sets": 4,
+          "target_reps": "12-15"
+        },
+        {
+          "exercise": "Cable Tricep Pushdown",
+          "sets": 3,
+          "target_reps": "10-12"
+        },
+        {
+          "exercise": "Overhead Rope Extension",
+          "sets": 3,
+          "target_reps": "12-15"
+        }
+      ]
+    },
+    {
+      "day_type": "pull",
+      "status": "completed",
+      "exercises": [
+        {
+          "exercise": "Lat Pulldown",
+          "weight_kg": 50,
+          "sets": [9, 9, 9, 9]
+        },
+        {
+          "exercise": "Seated Cable Row",
+          "weight_kg": 36,
+          "sets": [10, 10, 10]
+        },
+        {
+          "exercise": "Single Arm Cable Pulldown",
+          "weight_kg": 32,
+          "sets": [10, 10, 10]
+        },
+        {
+          "exercise": "Face Pull",
+          "weight_kg": 23,
+          "sets": [12, 12, 12]
+        },
+        {
+          "exercise": "Dumbbell Curl",
+          "weight_kg": 10,
+          "sets": [12, 12],
+          "drop_set": true
+        },
+        {
+          "exercise": "Rope Hammer Curl",
+          "weight_kg": 23,
+          "sets": [12, 12, 12]
+        }
+      ]
+    },
+    {
+      "day_type": "legs",
+      "status": "template",
+      "exercises": [
+        {
+          "exercise": "Goblet Squat",
+          "sets": 4,
+          "target_reps": "8-12"
+        },
+        {
+          "exercise": "Romanian Deadlift (Dumbbells)",
+          "sets": 4,
+          "target_reps": "8-12"
+        },
+        {
+          "exercise": "Leg Press",
+          "sets": 3,
+          "target_reps": "10-12"
+        },
+        {
+          "exercise": "Leg Extension",
+          "sets": 3,
+          "target_reps": "12-15"
+        },
+        {
+          "exercise": "Hamstring Curl",
+          "sets": 3,
+          "target_reps": "12-15"
+        },
+        {
+          "exercise": "Standing Calf Raise",
+          "sets": 4,
+          "target_reps": "12-20"
+        }
+      ]
+    }
+  ]
+}

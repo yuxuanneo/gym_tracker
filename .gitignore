@@ -1,0 +1,4 @@
+progress.json
+progress.tmp
+__pycache__/
+.venv/
