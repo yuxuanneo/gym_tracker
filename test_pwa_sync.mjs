@@ -34,8 +34,10 @@ const fakeClient = {
     select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: cloudRow, error: null }) }) }),
   }),
 };
+const fetchCalls = [];
 const sandbox = {
   console, setTimeout, clearTimeout, setInterval, clearInterval, Date, JSON, Math, Promise, encodeURIComponent,
+  fetch: async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true, status: 200 }; },
   navigator: { vibrate() {} },
   location: { protocol: 'file:', href: 'http://localhost/index.html' },
   confirm: () => true,
@@ -43,7 +45,9 @@ const sandbox = {
     querySelector: s => elFor(s), querySelectorAll: () => [],
     getElementById: id => elFor('#' + id),
     createElement: () => new El(), body: { appendChild() {} }, head: { appendChild() {} },
+    addEventListener: () => {},
   },
+  addEventListener: () => {},
   localStorage: {
     getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; },
   },
@@ -59,6 +63,31 @@ await new Promise(r => setTimeout(r, 50));
 assert.equal(sandbox.validSbConfig({ url: 'https://evil.example.com', key: 'k'.repeat(30) }), false);
 assert.equal(sandbox.validSbConfig({ url: 'https://abcd.supabase.co', key: 'short' }), false);
 assert.equal(sandbox.validSbConfig({ url: 'https://abcd.supabase.co', key: 'k'.repeat(30) }), true);
+
+// Rest timer is anchored to a persisted end time, so leaving the app
+// (e.g. to reply to a text) and coming back resumes the true remaining time
+sandbox.startRest(90);
+const savedState = JSON.parse(store['ironlog_v1']);
+assert.ok(savedState.restEndsAt > Date.now() + 80_000 && savedState.restEndsAt < Date.now() + 95_000,
+  'rest end time persisted with local state');
+assert.ok(sandbox.restRemaining() > 80 && sandbox.restRemaining() <= 90, 'remaining derived from end time');
+// If the timer elapsed while the app was away, resuming reports it done and clears it
+sandbox.startRest(-1);
+assert.equal(sandbox.restRemaining(), 0);
+sandbox.resumeRest();
+assert.equal(JSON.parse(store['ironlog_v1']).restEndsAt, null, 'expired-while-away timer cleared on return');
+
+// ntfy: a rest schedules a delayed phone notification to the private topic
+assert.equal(sandbox.validNtfyTopic('ironlog-x7k2'), true);
+assert.equal(sandbox.validNtfyTopic('bad topic!'), false);
+assert.equal(sandbox.validNtfyTopic('abc'), false);
+store['ironlog_ntfy_v1'] = JSON.stringify({ topic: 'ironlog-test-x7k2' });
+assert.equal(await sandbox.scheduleRestNotification(90), true);
+const call = fetchCalls[fetchCalls.length - 1];
+assert.equal(call.url, 'https://ntfy.sh/ironlog-test-x7k2');
+assert.equal(call.opts.method, 'POST');
+assert.equal(call.opts.headers.Delay, '90s');
+assert.match(call.opts.body, /Rest over/);
 
 // Password sign-in (the home-screen-app-friendly path) authenticates
 const pw = await sandbox.sbPasswordSignIn('a@b.c', 'hunter2-secret');

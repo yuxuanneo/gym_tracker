@@ -143,3 +143,20 @@ everything saves on-device and syncs next time you're online. Free Supabase
 projects pause after about a week of inactivity; if a sync fails after a
 long break, open the Supabase dashboard to resume the project, then Sync now.
 Your session stays signed in on the device until you sign out.
+
+## Rest-over notifications outside the app (ntfy, free)
+
+iOS/Android won't let a web app buzz you from the background, so Iron Log
+delegates that to [ntfy](https://ntfy.sh): starting a rest schedules a
+"Rest over" push for when the timer ends. Two minutes to set up:
+
+1. Install the free **ntfy** app (App Store / Play Store).
+2. In ntfy, subscribe (**+**) to a topic only you know — long and random,
+   e.g. `ironlog-yuxuan-x7k2p9`. Treat it like a password.
+3. In Iron Log: **Data tab → 🔔 Rest-over notification** → paste the same
+   topic → **Save topic** → **Send test notification**. Your phone should buzz.
+
+After that, every rest (60/90/120s, including the auto 90s after a set)
+schedules a phone notification automatically. Needs internet when the rest
+starts; stopping a timer early can't cancel an already-scheduled buzz. If
+you never set a topic, rest alerts simply stay in-app.

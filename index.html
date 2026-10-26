@@ -97,6 +97,7 @@ a{color:inherit}
         <button class="btn secondary" data-rest="120" style="padding:10px">120s</button>
       </div>
       <button class="btn secondary" id="timerToggle" style="margin-top:8px;padding:12px">Start / Pause</button>
+      <p id="ntfyHint" style="font-size:12px;color:var(--muted);margin:8px 0 0"></p>
     </div>
   </section>
 
@@ -135,6 +136,16 @@ a{color:inherit}
       </div>
       <button class="btn secondary" id="sbSignOutBtn" style="margin-top:8px">Sign out</button>
       <p id="sbStatus" style="font-size:13px;color:var(--muted);line-height:1.5;margin:10px 0 0">Not configured — local-only for now.</p>
+    </div>
+    <div class="card" style="border-color:#4a3a2b">
+      <b>🔔 Rest-over notification, even outside the app (ntfy)</b>
+      <p style="color:var(--muted);font-size:13px;line-height:1.55">Web apps can't buzz you from the background, so Iron Log asks the free <b style="color:var(--text)">ntfy</b> service to do it: when a rest starts, it schedules a "Rest over" push for exactly when the timer ends — delivered even if you're in another app or the phone is locked. Install the free <b style="color:var(--text)">ntfy</b> app (App Store / Play Store), subscribe to your topic there, and paste the same topic here. Pick a long random topic (e.g. <i>ironlog-yuxuan-x7k2p9</i>) and treat it like a password — anyone who knows it can send you notifications. Needs internet when the rest starts; stopping a timer early can't cancel an already-scheduled notification.</p>
+      <input id="ntfyTopic" type="text" placeholder="Your private ntfy topic (e.g. ironlog-yuxuan-x7k2p9)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin-bottom:8px">
+      <div class="grid2">
+        <button class="btn secondary" id="ntfySaveBtn">Save topic</button>
+        <button class="btn secondary" id="ntfyTestBtn">Send test notification</button>
+      </div>
+      <p id="ntfyStatus" style="font-size:13px;color:var(--muted);line-height:1.5;margin:10px 0 0">Not set up — rest alerts stay in-app only.</p>
     </div>
     <div class="card">
       <b>Put it on your phone (free)</b>
@@ -260,7 +271,7 @@ function renderCta(){
   } else if(state.view==='session'){
     bar.innerHTML=`<div class="grid2"><button class="btn secondary" id="discardBtn">Discard</button><button class="btn green" id="finishBtn">Finish & save ✓</button></div>`;
     $('#finishBtn').onclick=finishSession;
-    $('#discardBtn').onclick=()=>{ if(confirm('Discard this workout? Nothing will be saved.')){ state.active=null; state.view='train'; save(); render(); } };
+    $('#discardBtn').onclick=()=>{ if(confirm('Discard this workout? Nothing will be saved.')){ state.active=null; state.restEndsAt=null; state.view='train'; save(); render(); } };
   } else {
     bar.innerHTML=`<button class="btn" id="ctaBtn">Back to training</button>`;
     $('#ctaBtn').onclick=()=>{ state.view='train'; save(); render(); };
@@ -353,6 +364,7 @@ function renderSession(){
 }
 function finishSession(){
   const a=state.active; if(!a) return;
+  state.restEndsAt=null;
   const sets=allSets(a);
   if(!sets.some(s=>s.done)){ if(!confirm('No sets marked done yet. Save anyway?')) return; }
   const entry={id:Date.now(), date:new Date().toISOString(), day_type:a.day_type,
@@ -380,12 +392,83 @@ function renderHistory(){
     </div>`).join('');
   $$('#historyList [data-del]').forEach(b=>b.onclick=()=>{ if(confirm('Delete this session from history? Your latest weights stay as-is.')){ state.history=state.history.filter(h=>h.id!=b.dataset.del); save(); render(); } });
 }
-// Timer
+// Rest timer — anchored to a persisted end timestamp, not a page-bound
+// countdown. Leaving the app (replying to a text, switching apps, even the
+// OS killing the page) can't lose it: on return the true remaining time is
+// recomputed from restEndsAt, or shown as finished if it elapsed away.
 function fmtTimer(s){ return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
-function startRest(sec){ timerSec=sec; timerLeft=sec; clearInterval(timerId); $('#timerText').textContent=fmtTimer(timerLeft);
-  timerId=setInterval(()=>{ timerLeft--; $('#timerText').textContent=fmtTimer(Math.max(0,timerLeft)); if(timerLeft<=0){ clearInterval(timerId); if(navigator.vibrate) navigator.vibrate([100,50,100]); toast('Rest over — next set 💪'); $('#timerText').textContent='00:00'; } },1000); }
+function restRemaining(){ return state.restEndsAt ? Math.max(0, Math.ceil((state.restEndsAt-Date.now())/1000)) : 0; }
+function paintRest(){
+  const el=$('#timerText'); if(!el) return;
+  el.textContent = state.restEndsAt ? (restRemaining()>0 ? fmtTimer(restRemaining()) : 'Done ✓') : '01:30';
+}
+function signalRestDone(){
+  state.restEndsAt=null; save(); paintRest();
+  if(navigator.vibrate) navigator.vibrate([100,50,100]);
+  toast('Rest over — next set 💪');
+}
+function runRestTicker(){
+  clearInterval(timerId); paintRest();
+  if(!state.restEndsAt) return;
+  timerId=setInterval(()=>{
+    if(!state.restEndsAt){ clearInterval(timerId); paintRest(); return; }
+    if(Date.now()>=state.restEndsAt){ clearInterval(timerId); signalRestDone(); }
+    else paintRest();
+  },250);
+}
+function startRest(sec){
+  state.restEndsAt=Date.now()+sec*1000; save(); runRestTicker();
+  scheduleRestNotification(sec).catch(()=>{});
+}
+// ---------- ntfy rest-over notifications (works outside the app) ----------
+const NTFY_KEY='ironlog_ntfy_v1';
+function ntfyTopic(){ try{ return ((JSON.parse(localStorage.getItem(NTFY_KEY))||{}).topic||'').trim(); }catch(e){ return ''; } }
+function validNtfyTopic(t){ return /^[A-Za-z0-9_-]{6,64}$/.test((t||'').trim()); }
+function ntfyStatus(msg){ const el=document.getElementById('ntfyStatus'); if(el) el.textContent=msg; }
+async function scheduleRestNotification(sec, testOnly){
+  const topic=ntfyTopic();
+  if(!validNtfyTopic(topic)) return false;
+  const headers={ 'Title':'Iron Log — rest over', 'Tags':'muscle', 'Priority':'high' };
+  if(!testOnly) headers['Delay']=sec+'s';
+  const res=await fetch('https://ntfy.sh/'+encodeURIComponent(topic), {
+    method:'POST', headers,
+    body: testOnly ? 'Test notification — your rest alerts are wired up ✓' : 'Rest over — next set 💪'
+  });
+  if(!res.ok) throw new Error('ntfy returned '+res.status);
+  const hint=document.getElementById('ntfyHint');
+  if(hint && !testOnly) hint.textContent='🔔 Phone notification scheduled via ntfy for '+new Date(Date.now()+sec*1000).toLocaleTimeString();
+  return true;
+}
+function initNtfyUi(){
+  const input=document.getElementById('ntfyTopic'); if(!input) return;
+  input.value=ntfyTopic();
+  if(validNtfyTopic(input.value)) ntfyStatus('Topic saved. Rests will buzz your phone via the ntfy app, even outside Iron Log.');
+  document.getElementById('ntfySaveBtn').onclick=()=>{
+    const t=input.value.trim();
+    if(!validNtfyTopic(t)){ toast('Topic needs 6–64 letters/numbers/-/_ (make it long & random)'); return; }
+    localStorage.setItem(NTFY_KEY, JSON.stringify({topic:t}));
+    ntfyStatus('Topic saved. Tap “Send test notification” to check your phone buzzes.');
+    toast('ntfy topic saved');
+  };
+  document.getElementById('ntfyTestBtn').onclick=async()=>{
+    const t=input.value.trim();
+    if(!validNtfyTopic(t)){ toast('Enter & save a valid topic first'); return; }
+    localStorage.setItem(NTFY_KEY, JSON.stringify({topic:t}));
+    try{ await scheduleRestNotification(0, true); ntfyStatus('Test sent — check the ntfy app on your phone. No buzz? Confirm you subscribed to exactly “'+t+'” in ntfy.'); toast('Test notification sent'); }
+    catch(e){ ntfyStatus('Test failed: '+e.message+' (needs internet)'); toast('Test failed — see status below'); }
+  };
+}
+initNtfyUi();
+function stopRest(){ state.restEndsAt=null; save(); clearInterval(timerId); paintRest(); }
+function resumeRest(){
+  // Called on load and whenever the app becomes visible again.
+  if(!state.restEndsAt) { paintRest(); return; }
+  if(Date.now()>=state.restEndsAt) signalRestDone(); else runRestTicker();
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resumeRest(); });
+window.addEventListener('focus', resumeRest);
 $$('#timerCard [data-rest]').forEach(b=>b.onclick=()=>startRest(+b.dataset.rest));
-$('#timerToggle').onclick=()=>{ if(timerId){ clearInterval(timerId); timerId=null; } else startRest(timerLeft||timerSec); };
+$('#timerToggle').onclick=()=>{ if(state.restEndsAt) stopRest(); else startRest(90); };
 // Elapsed
 setInterval(()=>{ const a=state.active; const el=$('#sessTime'); if(a&&el&&state.view==='session'){ const s=Math.floor((Date.now()-new Date(a.startedAt).getTime())/1000); el.textContent=fmtTimer(s); } },1000);
 // Nav
@@ -522,7 +605,7 @@ function initSbUi(){
 initSbUi();
 // Resume an in-progress workout automatically
 if(state.active) state.view='session';
-render(); save();
+render(); save(); resumeRest();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 </script>
 </body>
