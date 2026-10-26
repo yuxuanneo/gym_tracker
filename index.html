@@ -428,7 +428,7 @@ function ntfyStatus(msg){ const el=document.getElementById('ntfyStatus'); if(el)
 async function scheduleRestNotification(sec, testOnly){
   const topic=ntfyTopic();
   if(!validNtfyTopic(topic)) return false;
-  const headers={ 'Title':'Iron Log — rest over', 'Tags':'muscle', 'Priority':'high' };
+  const headers={ 'Title':'Iron Log - rest over', 'Tags':'muscle', 'Priority':'high' }; // ASCII only: Safari rejects non-ASCII header values
   if(!testOnly) headers['Delay']=sec+'s';
   const res=await fetch('https://ntfy.sh/'+encodeURIComponent(topic), {
     method:'POST', headers,
@@ -455,7 +455,7 @@ function initNtfyUi(){
     if(!validNtfyTopic(t)){ toast('Enter & save a valid topic first'); return; }
     localStorage.setItem(NTFY_KEY, JSON.stringify({topic:t}));
     try{ await scheduleRestNotification(0, true); ntfyStatus('Test sent — check the ntfy app on your phone. No buzz? Confirm you subscribed to exactly “'+t+'” in ntfy.'); toast('Test notification sent'); }
-    catch(e){ ntfyStatus('Test failed: '+e.message+' (needs internet)'); toast('Test failed — see status below'); }
+    catch(e){ ntfyStatus('Test failed: '+e.message); toast('Test failed — see status below'); }
   };
 }
 initNtfyUi();

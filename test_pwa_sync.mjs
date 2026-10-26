@@ -88,6 +88,10 @@ assert.equal(call.url, 'https://ntfy.sh/ironlog-test-x7k2');
 assert.equal(call.opts.method, 'POST');
 assert.equal(call.opts.headers.Delay, '90s');
 assert.match(call.opts.body, /Rest over/);
+// Safari rejects non-ASCII bytes in header values — headers must be ASCII-only
+for (const [k, v] of Object.entries(call.opts.headers)) {
+  assert.match(k + ': ' + v, /^[\x00-\x7F]*$/, `header ${k} must be ASCII`);
+}
 
 // Password sign-in (the home-screen-app-friendly path) authenticates
 const pw = await sandbox.sbPasswordSignIn('a@b.c', 'hunter2-secret');
