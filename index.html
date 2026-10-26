@@ -117,6 +117,23 @@ a{color:inherit}
       <label class="btn secondary" style="display:block;text-align:center;margin-top:8px;padding:16px;border-radius:16px;font-weight:900">Import JSON backup<input type="file" id="importFile" accept=".json,application/json" hidden></label>
       <button class="btn secondary" id="copyBtn" style="margin-top:8px">Copy backup to clipboard</button>
     </div>
+    <div class="card" style="border-color:#2b4a3a">
+      <b>☁ Private cloud backup (Supabase)</b>
+      <p style="color:var(--muted);font-size:13px;line-height:1.55">Automatic, private backup that survives losing this phone. Your logs stay on this device first (offline-safe); when you're signed in and online, every change also syncs to your own Supabase project, visible only to your account. Setup takes ~5 minutes — steps in the README. Leave blank to stay local-only.</p>
+      <input id="sbUrl" type="url" placeholder="Supabase Project URL (https://xxxx.supabase.co)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin-bottom:8px">
+      <input id="sbKey" type="text" placeholder="Supabase anon / publishable key" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin-bottom:8px">
+      <input id="sbEmail" type="email" placeholder="Your email (for sign-in link)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin-bottom:8px">
+      <button class="btn secondary" id="sbSaveBtn">Save Supabase settings</button>
+      <button class="btn" id="sbSignInBtn" style="margin-top:8px">Email me a sign-in link</button>
+      <input id="sbCode" type="text" inputmode="numeric" placeholder="6-digit code from the email (if shown)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin:8px 0">
+      <button class="btn secondary" id="sbVerifyBtn">Verify code instead (use this in the home-screen app)</button>
+      <div class="grid2" style="margin-top:8px">
+        <button class="btn secondary" id="sbSyncBtn">Sync now ↑</button>
+        <button class="btn secondary" id="sbRestoreBtn">Restore from cloud ↓</button>
+      </div>
+      <button class="btn secondary" id="sbSignOutBtn" style="margin-top:8px">Sign out</button>
+      <p id="sbStatus" style="font-size:13px;color:var(--muted);line-height:1.5;margin:10px 0 0">Not configured — local-only for now.</p>
+    </div>
     <div class="card">
       <b>Put it on your phone (free)</b>
       <p style="color:var(--muted);font-size:13px;line-height:1.6">Push this folder to a GitHub repo → Settings → Pages → deploy from <b style="color:var(--text)">main / root</b>. Open the Pages URL on your phone → Share → <b style="color:var(--text)">Add to Home Screen</b>. It then behaves like a native app, offline. Full steps are in the README in this folder.</p>
@@ -187,7 +204,7 @@ if(!state.history.length && !localStorage.getItem(KEY)) state.selectedDay='push'
 if(!state.selectedDay) state.selectedDay='push';
 let timerSec=90, timerLeft=90, timerId=null;
 
-function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); scheduleCloudSync(); }
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
 function suggestionFor(name){
   const last=state.last[name]; if(!last) return null;
@@ -392,6 +409,99 @@ $('#importFile').onchange=(ev)=>{
   r.readAsText(f); ev.target.value='';
 };
 $('#resetBtn').onclick=()=>{ if(confirm('Reset everything on this device to the original plan?')){ localStorage.removeItem(KEY); state=seedState(); state.selectedDay='push'; save(); render(); toast('Reset to original plan'); } };
+// ---------- Supabase cloud backup (optional, private per-user) ----------
+// Local storage stays the source of truth: sync is a background copy to
+// your own Supabase project (table workout_state, one row per user, RLS
+// restricts it to your account). The anon key is safe to use client-side
+// *because* RLS is on — never put a service_role key here.
+const SB_KEY='ironlog_supabase_v1';
+let sbClient=null, sbSyncTimer=null, sbLastSync=0;
+function sbConfig(){ try{ return JSON.parse(localStorage.getItem(SB_KEY))||{}; }catch(e){ return {}; } }
+function sbStatus(msg){ const el=document.getElementById('sbStatus'); if(el) el.textContent=msg; }
+function validSbConfig(c){ return !!(c && /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test((c.url||'').trim()) && (c.key||'').trim().length>=20); }
+function loadSbScript(){
+  if(window.supabase && window.supabase.createClient) return Promise.resolve();
+  return new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s.onload=res; s.onerror=()=>rej(new Error('Could not load Supabase library (offline?)')); document.head.appendChild(s); });
+}
+async function getSbClient(){
+  if(sbClient) return sbClient;
+  const cfg=sbConfig(); if(!validSbConfig(cfg)) throw new Error('Add your Supabase URL + anon key first, then Save settings.');
+  await loadSbScript();
+  sbClient=window.supabase.createClient(cfg.url.trim(), cfg.key.trim());
+  return sbClient;
+}
+async function sbSession(){ const sb=await getSbClient(); const {data}=await sb.auth.getSession(); return data.session; }
+function scheduleCloudSync(){
+  // Debounced background sync after every local save; silent when offline
+  // or not signed in — logging at the gym is never blocked by the cloud.
+  const cfg=sbConfig(); if(!validSbConfig(cfg)) return;
+  clearTimeout(sbSyncTimer);
+  sbSyncTimer=setTimeout(()=>{ syncToCloud(true).catch(()=>{}); }, 2500);
+}
+async function syncToCloud(silent){
+  const sb=await getSbClient(); const session=await sbSession();
+  if(!session){ if(!silent) toast('Sign in first (check your email for the link)'); sbStatus('Not signed in — tap “Email me a sign-in link”.'); return false; }
+  const payload={user_id:session.user.id, state:state, updated_at:new Date().toISOString()};
+  const {error}=await sb.from('workout_state').upsert(payload, {onConflict:'user_id'});
+  if(error) throw error;
+  sbLastSync=Date.now();
+  sbStatus('☁ Backed up '+new Date().toLocaleTimeString()+' as '+session.user.email+' · '+state.history.length+' session(s) in history');
+  if(!silent) toast('Cloud backup done ✓');
+  return true;
+}
+async function restoreFromCloud(){
+  const sb=await getSbClient(); const session=await sbSession();
+  if(!session){ toast('Sign in first'); return; }
+  const {data,error}=await sb.from('workout_state').select('state,updated_at').eq('user_id',session.user.id).maybeSingle();
+  if(error) throw error;
+  if(!data){ toast('No cloud backup found for this account yet'); return; }
+  if(!confirm('Replace everything on this phone with the cloud backup from '+new Date(data.updated_at).toLocaleString()+'?')) return;
+  state=data.state; localStorage.setItem(KEY, JSON.stringify(state)); render(); toast('Restored from cloud ✓');
+}
+function initSbUi(){
+  const cfg=sbConfig();
+  const u=document.getElementById('sbUrl'), k=document.getElementById('sbKey'), em=document.getElementById('sbEmail');
+  if(!u) return;
+  u.value=cfg.url||''; k.value=cfg.key||''; em.value=cfg.email||'';
+  if(validSbConfig(cfg)) sbStatus('Configured. Sign in, then Sync now — after that, backups happen automatically.');
+  document.getElementById('sbSaveBtn').onclick=()=>{
+    const c={url:u.value.trim(), key:k.value.trim(), email:em.value.trim()};
+    if(!validSbConfig(c)){ toast('That URL/key does not look right'); return; }
+    localStorage.setItem(SB_KEY, JSON.stringify(c)); sbClient=null;
+    sbStatus('Settings saved. Now tap “Email me a sign-in link”.'); toast('Supabase settings saved');
+  };
+  document.getElementById('sbSignInBtn').onclick=async()=>{
+    try{
+      const c={url:u.value.trim(), key:k.value.trim(), email:em.value.trim()};
+      if(!validSbConfig(c) || !c.email.includes('@')){ toast('Enter URL, key and a valid email first'); return; }
+      localStorage.setItem(SB_KEY, JSON.stringify(c)); sbClient=null;
+      const sb=await getSbClient();
+      const {error}=await sb.auth.signInWithOtp({email:c.email, options:{emailRedirectTo:location.href.split('#')[0]}});
+      if(error) throw error;
+      sbStatus('Sign-in link sent to '+c.email+' — open it on this phone, then come back here and Sync now.');
+      toast('Check your email for the sign-in link');
+    }catch(e){ sbStatus('Sign-in failed: '+e.message); toast('Sign-in failed — see status below'); }
+  };
+  document.getElementById('sbVerifyBtn').onclick=async()=>{
+    try{
+      const code=(document.getElementById('sbCode').value||'').trim();
+      const c=sbConfig();
+      if(!code || !(c.email||'').includes('@')){ toast('Enter the code and your email first'); return; }
+      const sb=await getSbClient();
+      const {error}=await sb.auth.verifyOtp({email:c.email, token:code, type:'email'});
+      if(error) throw error;
+      sbStatus('☁ Signed in as '+c.email+' — syncing now…'); await syncToCloud(true); toast('Signed in & backed up ✓');
+    }catch(e){ sbStatus('Code check failed: '+e.message); toast('Code check failed — see status below'); }
+  };
+  document.getElementById('sbSyncBtn').onclick=async()=>{ try{ await syncToCloud(false); }catch(e){ sbStatus('Sync failed: '+e.message); toast('Sync failed — see status below'); } };
+  document.getElementById('sbRestoreBtn').onclick=async()=>{ try{ await restoreFromCloud(); }catch(e){ sbStatus('Restore failed: '+e.message); toast('Restore failed — see status below'); } };
+  document.getElementById('sbSignOutBtn').onclick=async()=>{ try{ const sb=await getSbClient(); await sb.auth.signOut(); sbStatus('Signed out. Local data on this phone is untouched.'); toast('Signed out'); }catch(e){ sbStatus('Sign-out: '+e.message); } };
+  // Show signed-in state on load (session persists in this browser)
+  if(validSbConfig(cfg)){ sbSession().then(s=>{ if(s) sbStatus('☁ Signed in as '+s.user.email+' · backups sync automatically · last check '+new Date().toLocaleTimeString()); }).catch(()=>{}); }
+}
+initSbUi();
 // Resume an in-progress workout automatically
 if(state.active) state.view='session';
 render(); save();

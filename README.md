@@ -114,3 +114,32 @@ It now opens full-screen like a native app and works offline.
 
 **Data tab → Export JSON backup**, then **Import JSON backup** on the new device.
 It accepts both app backups and a plain `workout_splits.json`.
+
+## Automatic private cloud backup (Supabase, ~5 minutes, free)
+
+Browser storage alone is *best-effort* — it can be evicted by the OS/browser
+without you clearing anything, and it dies with the phone. Supabase sync keeps
+an automatic private copy in the cloud. Nobody else can read it: the table has
+Row Level Security, so each account only ever sees its own row.
+
+1. Create a free project at [supabase.com](https://supabase.com) (any name/region).
+2. In the project: **SQL Editor → New query**, paste the contents of
+   `supabase_schema.sql` from this repo, **Run**.
+3. **Project Settings → API**: copy the **Project URL** and the **anon /
+   publishable key**. (Never use the `service_role` key in the app.)
+4. In the app: **Data tab → ☁ Private cloud backup** — paste URL + key + your
+   email → **Save Supabase settings** → **Email me a sign-in link**.
+5. Open the email **on the phone**. In the home-screen app, prefer the 6-digit
+   code path (**Verify code**) if your email shows a code — iOS keeps Safari
+   and home-screen app storage separate, so a link tap can sign in the wrong
+   container. (If you only get a link, sign in once in the browser tab you
+   installed from, then use the app.)
+6. Back in the app tap **Sync now** once. After that, every change auto-syncs
+   in the background whenever you're online and signed in. **Restore from
+   cloud** brings it back on a new phone (it asks before overwriting).
+
+Good to know: local logging never waits for the cloud — offline at the gym,
+everything saves on-device and syncs next time you're online. Free Supabase
+projects pause after about a week of inactivity; if a sync fails after a
+long break, open the Supabase dashboard to resume the project, then Sync now.
+Your session stays signed in on the device until you sign out.
