@@ -127,6 +127,8 @@ a{color:inherit}
       <button class="btn" id="sbSignInBtn" style="margin-top:8px">Email me a sign-in link</button>
       <input id="sbCode" type="text" inputmode="numeric" placeholder="6-digit code from the email (if shown)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin:8px 0">
       <button class="btn secondary" id="sbVerifyBtn">Verify code instead (use this in the home-screen app)</button>
+      <input id="sbPassword" type="password" placeholder="Password (easiest: create a user in Supabase → Auth → Users)" style="width:100%;padding:14px;border-radius:12px;background:#101210;border:1px solid var(--line);color:var(--text);font-size:14px;margin:8px 0">
+      <button class="btn" id="sbPasswordBtn" style="background:var(--green);color:#0d1f14">Sign in with password (recommended)</button>
       <div class="grid2" style="margin-top:8px">
         <button class="btn secondary" id="sbSyncBtn">Sync now ↑</button>
         <button class="btn secondary" id="sbRestoreBtn">Restore from cloud ↓</button>
@@ -433,6 +435,12 @@ async function getSbClient(){
   return sbClient;
 }
 async function sbSession(){ const sb=await getSbClient(); const {data}=await sb.auth.getSession(); return data.session; }
+async function sbPasswordSignIn(email, password){
+  const sb=await getSbClient();
+  const {data,error}=await sb.auth.signInWithPassword({email:(email||'').trim(), password:password||''});
+  if(error) throw error;
+  return data;
+}
 function scheduleCloudSync(){
   // Debounced background sync after every local save; silent when offline
   // or not signed in — logging at the gym is never blocked by the cloud.
@@ -494,6 +502,16 @@ function initSbUi(){
       if(error) throw error;
       sbStatus('☁ Signed in as '+c.email+' — syncing now…'); await syncToCloud(true); toast('Signed in & backed up ✓');
     }catch(e){ sbStatus('Code check failed: '+e.message); toast('Code check failed — see status below'); }
+  };
+  document.getElementById('sbPasswordBtn').onclick=async()=>{
+    try{
+      const c={url:u.value.trim(), key:k.value.trim(), email:em.value.trim()};
+      const pw=document.getElementById('sbPassword').value||'';
+      if(!validSbConfig(c) || !c.email.includes('@') || !pw){ toast('Enter URL, key, email and password first'); return; }
+      localStorage.setItem(SB_KEY, JSON.stringify(c)); sbClient=null;
+      await sbPasswordSignIn(c.email, pw);
+      sbStatus('☁ Signed in as '+c.email+' — syncing now…'); await syncToCloud(true); toast('Signed in & backed up ✓');
+    }catch(e){ sbStatus('Password sign-in failed: '+e.message); toast('Sign-in failed — see status below'); }
   };
   document.getElementById('sbSyncBtn').onclick=async()=>{ try{ await syncToCloud(false); }catch(e){ sbStatus('Sync failed: '+e.message); toast('Sync failed — see status below'); } };
   document.getElementById('sbRestoreBtn').onclick=async()=>{ try{ await restoreFromCloud(); }catch(e){ sbStatus('Restore failed: '+e.message); toast('Restore failed — see status below'); } };

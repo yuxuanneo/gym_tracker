@@ -22,6 +22,10 @@ const fakeClient = {
   auth: {
     getSession: async () => ({ data: { session: { user: { id: 'user-123', email: 'a@b.c' } } } }),
     signInWithOtp: async () => ({ error: null }),
+    signInWithPassword: async ({ email, password }) => {
+      assert.equal(email, 'a@b.c'); assert.equal(password, 'hunter2-secret');
+      return { data: { user: { id: 'user-123', email } }, error: null };
+    },
     verifyOtp: async () => ({ error: null }),
     signOut: async () => ({}),
   },
@@ -55,6 +59,10 @@ await new Promise(r => setTimeout(r, 50));
 assert.equal(sandbox.validSbConfig({ url: 'https://evil.example.com', key: 'k'.repeat(30) }), false);
 assert.equal(sandbox.validSbConfig({ url: 'https://abcd.supabase.co', key: 'short' }), false);
 assert.equal(sandbox.validSbConfig({ url: 'https://abcd.supabase.co', key: 'k'.repeat(30) }), true);
+
+// Password sign-in (the home-screen-app-friendly path) authenticates
+const pw = await sandbox.sbPasswordSignIn('a@b.c', 'hunter2-secret');
+assert.equal(pw.user.id, 'user-123');
 
 // Sync upserts the whole local state under the signed-in user's id only
 assert.equal(await sandbox.syncToCloud(false), true);
